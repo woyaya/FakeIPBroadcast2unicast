@@ -1,6 +1,7 @@
 #!/bin/bash
 # Variables
-REALPATH=`realpath $0`
+REALPATH=`realpath $0 2>/dev/null`
+[ -z "$REALPATH" ] && REALPATH="$0"
 EXEC=`basename $REALPATH`
 DIR=`dirname $REALPATH`
 export REALPATH EXEC DIR
