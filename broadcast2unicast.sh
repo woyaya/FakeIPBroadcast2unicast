@@ -28,11 +28,12 @@ USAGE(){
 	exit -1
 }
 
-#ebtable_check subnet mac
-ebtable_check(){
-	local exist
-	exist=`ebtables -t nat -L PREROUTING 2>/dev/null | grep "dnat" | grep $1 | grep $2`
-	[ -z "$exist" ] && return 1
+
+#_ebtable_subnet2mac subnet
+_ebtable_subnet2mac(){
+	local setting
+	setting=`ebtables -t nat -L PREROUTING 2>/dev/null | grep "dnat" | grep $1`
+	get_mac "$setting"
 	return 0
 }
 #ebtable_set subnet mac
@@ -44,11 +45,9 @@ ebtable_set(){
 #ebtable_clear subnet
 ebtable_clear(){
 	local _mac
-	local exist
-	exist=`ebtables -t nat -L PREROUTING 2>/dev/null | grep "dnat" | grep $1`
-	[ -z "$exist" ] && return 0
-	_mac=`echo "$exist" | sed -nE 's/.*(([0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}).*/\1/p'`
-	INF "Clear ebtables setting: $subnet with mac: $mac"
+	_mac=`_ebtable_subnet2mac $1`
+	[ -z "$_mac" ] && return 0
+	INF "Clear ebtables setting: $subnet with mac: $_mac"
 	echo "ebtables -t nat -D PREROUTING -p IPv4 --ip-dst $1 -j dnat --to-destination $_mac 2>/dev/null"
 	[ -n "$DRYRUN" ] && return
 	ebtables -t nat -D PREROUTING -p IPv4 --ip-dst $1 -j dnat --to-destination $_mac 2>/dev/null
@@ -57,7 +56,7 @@ ebtable_clear(){
 
 # ip2mac ip
 ip2mac(){
-	arp -n $1 2>/dev/null | sed -nE 's/.*(([0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}).*/\1/p'
+	get_mac $(arp -n $1 2>/dev/null)
 }
 
 LIST=""
@@ -139,10 +138,13 @@ while read LINE; do
 		continue
 	}
 	# Check if already set
-	ebtable_check $subnet $mac && {
-		INF "Already exist: $subnet->$ip($mac)"
-		continue
+	mac_set=$(_ebtable_subnet2mac $subnet)
+	[ "$mac_set" = "$mac" ] && continue
+	[ -n "$mac_set" ] && {
+		WRN "The MAC of the subnet($subnet) has changed: $mac_set->$mac, clear it"
+		ebtable_clear $subnet
 	}
+	INF "Set subnet($subnet) target as $ip($mac)"
 	ebtable_set $subnet $mac
 	ret=$?
 	[ "$ret" != "0" ] && {
